@@ -16,38 +16,38 @@ import (
 
 const defaultReloadInterval = 60 * time.Second
 
-// Engine watches price feeds and fires alerts. It periodically reloads the set
+// Engine watches a price feed and fires alerts. It periodically reloads the set
 // of active alerts from the database (the source of truth), so alerts created
 // through the API are picked up without restarting.
 //
-// Concurrency: a single mutex guards both the in-memory alert cache and the set
-// of active subscriptions. Network sends happen outside the lock.
+// Concurrency: a single mutex guards the in-memory alert cache. Network sends
+// happen outside the lock. All symbols share one feed.Stream connection.
 type Engine struct {
 	registry       *notifier.Registry
 	reloadInterval time.Duration
-	ctx            context.Context
+	stream         *feed.Stream
 
 	mu             sync.Mutex
 	alertsBySymbol map[string][]alert.Alert   // symbol (upper) -> active alerts
 	telegrams      map[uint]user.UserTelegram // userID -> Telegram binding (for bot lookup)
-	subscribed     map[string]bool            // symbol (upper) -> stream running
 }
 
 // New creates an engine that delivers notifications through the given registry.
 func New(registry *notifier.Registry) *Engine {
-	return &Engine{
+	e := &Engine{
 		registry:       registry,
 		reloadInterval: defaultReloadInterval,
 		alertsBySymbol: make(map[string][]alert.Alert),
 		telegrams:      make(map[uint]user.UserTelegram),
-		subscribed:     make(map[string]bool),
 	}
+	e.stream = feed.NewStream(e.onPrice)
+	return e
 }
 
 // Run loads alerts and keeps them refreshed until ctx is cancelled. It blocks,
 // so callers typically run it in a goroutine.
 func (e *Engine) Run(ctx context.Context) {
-	e.ctx = ctx
+	go e.stream.Run(ctx)
 	e.reload()
 
 	ticker := time.NewTicker(e.reloadInterval)
@@ -64,10 +64,10 @@ func (e *Engine) Run(ctx context.Context) {
 	}
 }
 
-// reload refreshes the in-memory alert cache from the database and starts a
-// price stream for any symbol that doesn't have one yet. Streams are never torn
-// down — a symbol with no active alerts simply gets an empty slice and its
-// ticks become no-ops.
+// reload refreshes the in-memory alert cache from the database and subscribes
+// the shared stream to any new symbol. Subscriptions are never dropped — a
+// symbol with no active alerts simply gets an empty slice and its ticks become
+// no-ops.
 func (e *Engine) reload() {
 	alerts, err := storage.GetActiveAlerts()
 	if err != nil {
@@ -103,14 +103,13 @@ func (e *Engine) reload() {
 	e.mu.Lock()
 	e.alertsBySymbol = bySymbol
 	e.telegrams = telegrams
-	for sym := range bySymbol {
-		if !e.subscribed[sym] {
-			e.subscribed[sym] = true
-			log.Printf("engine: subscribing to %s", sym)
-			go feed.StreamBinance(e.ctx, sym, e.onPrice)
-		}
-	}
 	e.mu.Unlock()
+
+	syms := make([]string, 0, len(bySymbol))
+	for sym := range bySymbol {
+		syms = append(syms, sym)
+	}
+	e.stream.Subscribe(syms...)
 }
 
 // firedAlert bundles everything needed to deliver one notification outside the
