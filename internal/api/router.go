@@ -1,20 +1,14 @@
 package api
 
 import (
-	"os"
 	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+
+	"github.com/ah2909/crypto-alert-engine/config"
 )
 
-// NewRouter wires up the HTTP routes.
-//
-// NOTE ON AUTH: this API is intentionally unauthenticated — callers pass a
-// user_id directly and bot tokens are stored per user. That is a deliberate
-// choice for a single-operator / learning deployment. Do NOT expose it on a
-// public network as-is: anyone could create alerts for any user. Add auth
-// (e.g. an API key or JWT scoping requests to the caller's user) before that.
 func NewRouter() *gin.Engine {
 	r := gin.Default()
 
@@ -23,9 +17,6 @@ func NewRouter() *gin.Engine {
 	// If you later deploy behind nginx/a load balancer, set this to its IP(s).
 	_ = r.SetTrustedProxies(nil)
 
-	// CORS: let the frontend call this API from a browser on another origin.
-	// Configure allowed origins via CORS_ALLOWED_ORIGINS (comma-separated);
-	// defaults to "*" for local development.
 	corsCfg := cors.DefaultConfig()
 	corsCfg.AllowOrigins = allowedOrigins()
 	corsCfg.AllowMethods = []string{"GET", "POST", "DELETE", "OPTIONS"}
@@ -33,14 +24,14 @@ func NewRouter() *gin.Engine {
 	r.Use(cors.New(corsCfg))
 
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		respondData(c, 200, gin.H{"status": "ok"})
 	})
 
-	// need a middleware to auth the request
 	api := r.Group("/api")
+	api.Use(AuthMiddleware()) // all /api routes require a valid RS256 bearer token
 	{
 		api.POST("/telegram-bot", addTelegramBot)
-		api.GET("/telegram-bot/:user_id", getTelegramByUserID)
+		api.GET("/telegram-bot", getTelegramByUserID)
 
 		api.POST("/alerts", createAlert)
 		api.GET("/alerts", listAlerts)
@@ -53,7 +44,7 @@ func NewRouter() *gin.Engine {
 // allowedOrigins reads CORS_ALLOWED_ORIGINS (comma-separated) and falls back to
 // "*" when it is unset — convenient for local development.
 func allowedOrigins() []string {
-	raw := os.Getenv("CORS_ALLOWED_ORIGINS")
+	raw := config.GetEnv("CORS_ALLOWED_ORIGINS", "")
 	if raw == "" {
 		return []string{"*"}
 	}

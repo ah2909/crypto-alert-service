@@ -8,10 +8,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds all settings loaded from the .env file.
-//
-// Telegram bot credentials are no longer global — each user supplies their own
-// when they register through the API — so there are no Telegram fields here.
 type Config struct {
 	APIPort       string
 	MySQLDSN      string
@@ -27,18 +23,15 @@ func Load() *Config {
 		log.Println("Warning: .env file not found, using system environment variables")
 	}
 
-	username := getEnv("REDIS_USERNAME", "")
-	password := getEnv("REDIS_PASSWORD", "")
-	addr := getEnv("REDIS_ADDR", "127.0.0.1:6379")
+	username := GetEnv("REDIS_USERNAME", "")
+	password := GetEnv("REDIS_PASSWORD", "")
+	addr := GetEnv("REDIS_ADDR", "127.0.0.1:6379")
 
-	// fmt.Sprintf builds a string by substituting values into a template.
-	// %s means "insert a string here".
-	// Result example: "redis://default:secret@localhost:6379"
 	redisAddr := fmt.Sprintf("redis://%s:%s@%s", username, password, addr)
 
 	return &Config{
-		APIPort:       getEnv("API_PORT", ":8080"),
-		MySQLDSN:      getEnv("MYSQL_DSN", ""),
+		APIPort:       GetEnv("API_PORT", ":8080"),
+		MySQLDSN:      GetEnv("MYSQL_DSN", ""),
 		RedisAddr:     redisAddr,
 		RedisUsername: username,
 		RedisPassword: password,
@@ -46,8 +39,10 @@ func Load() *Config {
 	}
 }
 
-// getEnv reads an env variable, returning a fallback value if not set
-func getEnv(key, fallback string) string {
+// GetEnv returns the value of the environment variable key, or fallback when it
+// is unset or empty. It is the single entry point for reading env vars so the
+// rest of the codebase doesn't call os.Getenv directly.
+func GetEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}

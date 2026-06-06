@@ -4,24 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-// binanceTickerMsg is the shape of the message Binance sends us
 type binanceTickerMsg struct {
-	Symbol string `json:"s"` // e.g. "BTCUSDT"
-	Price  string `json:"c"` // current price as a string
+	Symbol string          `json:"s"` // e.g. "BTCUSDT"
+	Price  json.RawMessage `json:"c"`
 }
 
-// StreamBinance opens a WebSocket to Binance for a single symbol and calls
-// onPrice for every price update. It runs until ctx is cancelled, reconnecting
-// automatically on any read/dial error (it never calls log.Fatal — losing one
-// symbol's stream must not take down the whole engine).
-//
-// symbol is case-insensitive (e.g. "BTCUSDT" or "btcusdt"); the Binance stream
-// name requires lowercase, which this function handles.
 func StreamBinance(ctx context.Context, symbol string, onPrice func(symbol string, price float64)) {
 	streamSymbol := toLower(symbol)
 	url := "wss://stream.binance.com:9443/ws/" + streamSymbol + "@ticker"
@@ -84,8 +77,12 @@ func readBinance(ctx context.Context, conn *websocket.Conn, onPrice func(symbol 
 			continue
 		}
 
+		// Strip the surrounding quotes when the price is string-encoded; a
+		// number-encoded price has none. parsePrice then handles either form.
+		priceStr := strings.Trim(string(msg.Price), `"`)
+
 		var price float64
-		if _, err := parsePrice(msg.Price, &price); err != nil {
+		if _, err := parsePrice(priceStr, &price); err != nil {
 			continue
 		}
 
@@ -106,7 +103,6 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// toLower lowercases an ASCII symbol without pulling in strings just for this.
 func toLower(s string) string {
 	b := []byte(s)
 	for i, c := range b {

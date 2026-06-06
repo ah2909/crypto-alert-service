@@ -14,9 +14,7 @@ import (
 	"github.com/ah2909/crypto-alert-engine/internal/user"
 )
 
-// defaultReloadInterval controls how quickly a newly-registered alert (and its
-// symbol) is picked up by the running engine.
-const defaultReloadInterval = 15 * time.Second
+const defaultReloadInterval = 60 * time.Second
 
 // Engine watches price feeds and fires alerts. It periodically reloads the set
 // of active alerts from the database (the source of truth), so alerts created
@@ -176,7 +174,7 @@ func (e *Engine) fire(f firedAlert) {
 
 	if err := n.SendAlert(f.alert.Symbol, string(f.alert.Condition), f.alert.Price, f.current); err != nil {
 		log.Printf("engine: failed to send alert %d: %v", f.alert.ID, err)
-		return // leave untriggered; next reload retries
+		return
 	}
 
 	storage.MarkAlertSent(f.alert.ID)

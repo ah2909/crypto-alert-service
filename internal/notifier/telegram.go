@@ -14,18 +14,11 @@ type TelegramNotifier struct {
 	chatID int64
 }
 
-// NewTelegramNotifier creates a notifier for a user's own bot token and chat ID.
-//
-// It returns an error (instead of crashing) if the token is invalid, so callers
-// can reject bad input — e.g. the API returns 400 on user registration and the
-// engine logs and skips. Construction calls Telegram's getMe to validate the
-// token, so it is bounded by a 10s HTTP timeout.
 func NewTelegramNotifier(token string, chatID int64) (*TelegramNotifier, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	bot, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, client)
 	if err != nil {
-		// Note: do not include the token in the error — it is a secret.
 		return nil, fmt.Errorf("failed to create Telegram bot: %w", err)
 	}
 
@@ -38,7 +31,7 @@ func NewTelegramNotifier(token string, chatID int64) (*TelegramNotifier, error) 
 // SendAlert sends a formatted alert message to the Telegram chat
 func (t *TelegramNotifier) SendAlert(symbol string, condition string, targetPrice, currentPrice float64) error {
 	text := fmt.Sprintf(
-		"🚨 *Price Alert Triggered!*\n\nSymbol: `%s`\nCondition: %s $%.2f\nCurrent Price: $%.2f",
+		"🚨 *Price Alert Triggered!*\n\nSymbol: `%s`\nCondition: %s $%.2f\nCurrent Price: $%.4f",
 		symbol, condition, targetPrice, currentPrice,
 	)
 

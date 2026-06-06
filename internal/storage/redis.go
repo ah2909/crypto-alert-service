@@ -46,7 +46,5 @@ func IsAlertSent(alertID uint) bool {
 // MarkAlertSent records that an alert was sent in Redis
 func MarkAlertSent(alertID uint) {
 	key := fmt.Sprintf("alert:sent:%d", alertID)
-	// Store for 24 hours so the alert won't re-send within the day even if the
-	// database "triggered" update is lost (cross-restart idempotency guard).
 	RDB.Set(context.Background(), key, "1", 24*time.Hour)
 }

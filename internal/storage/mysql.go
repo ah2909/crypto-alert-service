@@ -31,11 +31,6 @@ func InitMySQL(dsn string) {
 }
 
 // ---- UserTelegram repository ----
-//
-// A UserTelegram is a per-user Telegram binding. Its own ID is the row's
-// primary key; UserId is the user the binding belongs to. Alerts reference a
-// user via alert.UserID, which matches UserTelegram.UserId — so deliveries are
-// resolved by UserId, not by the binding's primary key.
 
 // AddTelegramBot inserts a new Telegram binding (and fills u.ID on success)
 func AddTelegramBot(u *user.UserTelegram) error {
@@ -51,9 +46,8 @@ func GetTelegramByUserID(userID uint) (*user.UserTelegram, error) {
 	return &u, nil
 }
 
-// GetTelegramsByUserIDs returns the Telegram bindings for the given user IDs,
-// keyed by UserId. Missing IDs are simply absent from the map. Used by the
-// engine to resolve which bot to notify for each alert.
+// GetTelegramsByUserIDs returns the Telegram bindings for the given user IDs
+// Used by the engine to resolve which bot to notify for each alert.
 func GetTelegramsByUserIDs(userIDs []uint) (map[uint]user.UserTelegram, error) {
 	result := make(map[uint]user.UserTelegram, len(userIDs))
 	if len(userIDs) == 0 {
@@ -71,12 +65,10 @@ func GetTelegramsByUserIDs(userIDs []uint) (map[uint]user.UserTelegram, error) {
 
 // ---- Alert repository ----
 
-// CreateAlert inserts a new alert (and fills a.ID on success)
 func CreateAlert(a *alert.Alert) error {
 	return DB.Create(a).Error
 }
 
-// ListAlertsByUser returns all alerts belonging to a user, newest first
 func ListAlertsByUser(userID uint) ([]alert.Alert, error) {
 	var alerts []alert.Alert
 	if err := DB.Where("user_id = ?", userID).Order("id DESC").Find(&alerts).Error; err != nil {
@@ -85,13 +77,15 @@ func ListAlertsByUser(userID uint) ([]alert.Alert, error) {
 	return alerts, nil
 }
 
-// DeleteAlert removes an alert by ID
-func DeleteAlert(id uint) error {
-	return DB.Delete(&alert.Alert{}, id).Error
+// DeleteAlert removes an alert by ID, but only if it belongs to userID.
+func DeleteAlert(id, userID uint) (bool, error) {
+	res := DB.Where("id = ? AND user_id = ?", id, userID).Delete(&alert.Alert{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
-// GetActiveAlerts returns every alert that has not yet fired. This is the
-// source of truth the engine reloads on each tick.
 func GetActiveAlerts() ([]alert.Alert, error) {
 	var alerts []alert.Alert
 	if err := DB.Where("triggered = ?", false).Find(&alerts).Error; err != nil {
@@ -100,7 +94,6 @@ func GetActiveAlerts() ([]alert.Alert, error) {
 	return alerts, nil
 }
 
-// MarkAlertTriggered flags an alert as fired so it won't be reloaded as active
 func MarkAlertTriggered(id uint) error {
 	return DB.Model(&alert.Alert{}).Where("id = ?", id).Update("triggered", true).Error
 }
