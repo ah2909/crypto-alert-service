@@ -176,6 +176,15 @@ func (e *Engine) fire(f firedAlert) {
 		return
 	}
 
+	if err := storage.PublishWSEvent(f.telegram.UserId, "alert-fired", map[string]any{
+		"symbol":    f.alert.Symbol,
+		"condition": string(f.alert.Condition),
+		"target":    f.alert.Price,
+		"current":   f.current,
+	}); err != nil {
+		log.Printf("engine: failed to publish ws event for alert %d: %v", f.alert.ID, err)
+	}
+
 	storage.MarkAlertSent(f.alert.ID)
 	if err := storage.MarkAlertTriggered(f.alert.ID); err != nil {
 		log.Printf("engine: failed to mark alert %d triggered: %v", f.alert.ID, err)

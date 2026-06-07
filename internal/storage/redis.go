@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -9,13 +10,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const wsEventsChannel = "app:events"
+
 // RDB is the shared Redis client
 var RDB *redis.Client
 
-// InitRedis creates a Redis client and verifies the connection.
-// addr accepts either "host:port" or a full URL like "redis://user:pass@host:port"
 func InitRedis(addr, password string, db int) {
-	// ParseURL handles the full redis:// URL format (with username/password baked in)
 	opt, err := redis.ParseURL(addr)
 	if err != nil {
 		// Fallback: plain host:port without credentials
@@ -47,4 +47,18 @@ func IsAlertSent(alertID uint) bool {
 func MarkAlertSent(alertID uint) {
 	key := fmt.Sprintf("alert:sent:%d", alertID)
 	RDB.Set(context.Background(), key, "1", 24*time.Hour)
+}
+
+// PublishWSEvent publishes a realtime event to Redis pub/sub
+// Socket.io server emits to a user's FE.
+func PublishWSEvent(userID uint, event string, data any) error {
+	payload, err := json.Marshal(map[string]any{
+		"event":  event,
+		"userId": userID,
+		"data":   data,
+	})
+	if err != nil {
+		return err
+	}
+	return RDB.Publish(context.Background(), wsEventsChannel, payload).Err()
 }
