@@ -1,0 +1,27 @@
+name: Notify production deployment
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  notify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Notify parent repository
+        shell: bash
+        env:
+          PARENT_DEPLOY_TOKEN: ${{ secrets.PARENT_DEPLOY_TOKEN }}
+          SERVICE: crypto-alert-engine
+        run: |
+          set -euo pipefail
+          : "${PARENT_DEPLOY_TOKEN:?Set this secret with access to the parent repository}"
+          payload=$(jq -n --arg service "$SERVICE" --arg sha "$GITHUB_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '{event_type:"service-push",client_payload:{service:$service,sha:$sha,repository:$repository}}')
+          code=$(curl --silent --connect-timeout 10 --max-time 30 --output /dev/null --write-out '%{http_code}' \
+            --request POST -H "Authorization: Bearer $PARENT_DEPLOY_TOKEN" \
+            -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2026-03-10' \
+            -H 'Content-Type: application/json' --data "$payload" \
+            https://api.github.com/repos/ah2909/cryptofolio/dispatches)
+          [[ "$code" == 204 ]] || { echo 'Parent deployment notification failed.'; exit 1; }
